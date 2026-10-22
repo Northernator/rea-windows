@@ -1,5 +1,7 @@
 # rea-windows
 
+![REA Windows: reading a window through UI Automation](docs/uia-hero.jpg)
+
 **Windows native UI provider for [REA](https://github.com/morluto/rea)** — observes and drives already-running Windows application windows through UI Automation, emitting REA's existing evidence envelopes.
 
 REA's native UI leg (`observe-native-ui`, `capture-native-ui-scenario`) is macOS-only, and its process capture is blocked on native Windows. Windows GUI apps therefore had no observation surface at all. This repo supplies one.
