@@ -1,0 +1,67 @@
+diff --git a/src/composition/auxiliaryAnalysisProviders.ts b/src/composition/auxiliaryAnalysisProviders.ts
+index c094b6d9f..575d3c282 100644
+--- a/src/composition/auxiliaryAnalysisProviders.ts
++++ b/src/composition/auxiliaryAnalysisProviders.ts
+@@ -10,12 +10,16 @@ import {
+   NATIVE_MACOS_PROVIDER_IDENTITY,
+   nativeMacOSCapabilities,
+ } from "../native/NativeMacOSProviderMetadata.js";
++import {
++  NATIVE_WINDOWS_PROVIDER_IDENTITY,
++  nativeWindowsCapabilities,
++} from "../native/NativeWindowsProviderMetadata.js";
+ 
+ type AuxiliaryProviderDeclaration = ConstructorParameters<
+   typeof LazyAnalysisProvider
+ >[0];
+ 
+-/** Wire the three existing auxiliary AnalysisProvider implementations lazily. */
++/** Wire the auxiliary AnalysisProvider implementations lazily. */
+ export const auxiliaryAnalysisProviderDeclarations = (
+   selectedEnvironment: Readonly<NodeJS.ProcessEnv>,
+   platform: NodeJS.Platform = process.platform,
+@@ -40,6 +44,15 @@ export const auxiliaryAnalysisProviderDeclarations = (
+         return new NativeMacOSProvider(environment, undefined, platform);
+       },
+     },
++    {
++      identity: NATIVE_WINDOWS_PROVIDER_IDENTITY,
++      capabilities: nativeWindowsCapabilities(platform),
++      load: async () => {
++        const { NativeWindowsProvider } =
++          await import("../native/NativeWindowsProvider.js");
++        return new NativeWindowsProvider(environment);
++      },
++    },
+     {
+       identity: MANAGED_STATIC_PROVIDER,
+       capabilities: managedStaticCapabilities(),
+diff --git a/src/native/NativeMacOSProviderMetadata.ts b/src/native/NativeMacOSProviderMetadata.ts
+index 6807c5e0d..f69e98c4c 100644
+--- a/src/native/NativeMacOSProviderMetadata.ts
++++ b/src/native/NativeMacOSProviderMetadata.ts
+@@ -34,19 +34,16 @@ const OWNED_PROCESS_OPERATIONS: ReadonlySet<string> = new Set([
+ export const nativeMacOSCapabilities = (
+   platform: NodeJS.Platform = process.platform,
+ ): readonly CapabilityDescriptor[] => {
+-  const available = platform === "darwin";
++  // Declare nothing off macOS: auxiliary providers must declare disjoint
++  // operations, so a host where this provider cannot run at all must not
++  // claim its operations (the Windows UI provider owns them there).
++  if (platform !== "darwin") return Object.freeze([]);
+   return Object.freeze(
+     [
+       ...NATIVE_TOOL_CONTRACTS,
+       { name: "inspect_native_dispatch_metadata" as const },
+     ].map((contract): CapabilityDescriptor => {
+-      const availability = available
+-        ? ({ available: true, reason: null } as const)
+-        : ({
+-            available: false,
+-            availabilityCode: "unsupported_host",
+-            reason: "Native macOS utilities require macOS.",
+-          } as const);
++      const availability = { available: true, reason: null } as const;
+       return Object.freeze({
+         provider: NATIVE_MACOS_PROVIDER_IDENTITY,
+         operation: contract.name,

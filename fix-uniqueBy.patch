@@ -1,0 +1,37 @@
+From d03d3deaffb8283c2a85c604c3857af3ddd832bf Mon Sep 17 00:00:00 2001
+From: Northernator <northernator@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:37:56 +0100
+Subject: [PATCH] fix: define the missing uniqueBy helper
+
+main does not compile without this: ReconstructionObligationCandidates
+calls uniqueBy (dedupe preserving first occurrence) but the helper was
+never defined, so tsc fails with TS2304. Kept separate from the Windows
+provider work so it can be reviewed or reverted on its own.
+---
+ src/application/ReconstructionObligationCandidates.ts | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/application/ReconstructionObligationCandidates.ts b/src/application/ReconstructionObligationCandidates.ts
+index e9ab00155..5f9e9450a 100644
+--- a/src/application/ReconstructionObligationCandidates.ts
++++ b/src/application/ReconstructionObligationCandidates.ts
+@@ -45,6 +45,16 @@ export class MissingReviewEvidenceError extends TypeError {
+ }
+ 
+ /** Derive conservative candidates from graph, process, and reviewed inputs. */
++const uniqueBy = <T>(items: readonly T[], key: (item: T) => string): T[] => {
++  const seen = new Set<string>();
++  return items.filter((item) => {
++    const k = key(item);
++    if (seen.has(k)) return false;
++    seen.add(k);
++    return true;
++  });
++};
++
+ export const deriveReconstructionObligationCandidates = (
+   bundleInput: EvidenceBundle,
+   reviewed: readonly ReviewedReconstructionObligation[],
+-- 
+2.55.0.windows.3
+
