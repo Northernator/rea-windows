@@ -244,11 +244,13 @@ def run_step(window, step: dict, deadline: float | None = None) -> tuple[str, st
         if kind == "click":
             pattern = control.GetInvokePattern()
             if pattern:
-                pattern.Invoke()
+                if not pattern.Invoke():
+                    return "failed", "Invoke pattern rejected the action"
                 return "completed", None
             selection = control.GetSelectionItemPattern()
             if selection:
-                selection.Select()
+                if not selection.Select():
+                    return "failed", "SelectionItem pattern rejected the action"
                 return "completed", "used selectionitem (no invoke pattern)"
             return "failed", "node has no invoke or selectionitem pattern"
         if kind == "key-entry":
@@ -267,7 +269,8 @@ def run_step(window, step: dict, deadline: float | None = None) -> tuple[str, st
                 return "completed", None
             # Match SetValue's replacement semantics, preserving literal braces.
             try:
-                control.SetFocus()
+                if not control.SetFocus():
+                    return "failed", "cannot focus the selected control for text entry"
                 auto.SendKeys("{Ctrl}a")
                 literal = "".join("{{}" if char == "{" else "{}}" if char == "}" else char for char in text)
                 auto.SendKeys(literal if text else "{Delete}")
@@ -285,7 +288,8 @@ def run_step(window, step: dict, deadline: float | None = None) -> tuple[str, st
             if direction not in ("increment", "decrement"):
                 return "failed", "scroll direction must be increment or decrement"
             amount = auto.ScrollAmount.SmallIncrement if direction == "increment" else auto.ScrollAmount.SmallDecrement
-            pattern.Scroll(auto.ScrollAmount.NoAmount, amount)
+            if not pattern.Scroll(auto.ScrollAmount.NoAmount, amount):
+                return "failed", "Scroll pattern rejected the action"
             return "completed", None
     except Exception as exc:  # keep evidence; never crash the envelope
         return "failed", f"{type(exc).__name__}: {exc}"

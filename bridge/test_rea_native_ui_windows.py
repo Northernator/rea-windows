@@ -61,9 +61,11 @@ class FakePattern:
 
     def Invoke(self):
         self.invoked = True
+        return True
 
     def Select(self):
         self.selected = True
+        return True
 
     def SetValue(self, text):
         self.set_value = text
@@ -71,6 +73,7 @@ class FakePattern:
 
     def Scroll(self, horizontal, vertical):
         self.scrolled = (horizontal, vertical)
+        return True
 
     @property
     def Value(self):
@@ -117,7 +120,7 @@ class FakeControl:
         return list(self._children)
 
     def SetFocus(self):
-        return None
+        return True
 
     def GetInvokePattern(self):
         return self._patterns.get("Invoke")
@@ -189,6 +192,23 @@ class PathResolutionTests(unittest.TestCase):
 class StepTests(unittest.TestCase):
     def _window_with(self, control):
         return FakeControl("Window", "WindowControl", children=[control])
+
+    def test_rejected_uia_calls_do_not_report_completed(self):
+        for kind, pattern_name, method in (("click", "Invoke", "Invoke"), ("click", "SelectionItem", "Select"), ("scroll", "Scroll", "Scroll")):
+            with self.subTest(pattern=pattern_name):
+                pattern = FakePattern(pattern_name)
+                control = FakeControl("Control", "PaneControl", [pattern])
+                with patch.object(pattern, method, return_value=False):
+                    outcome, reason = helper.run_step(self._window_with(control), {"kind": kind, "path": [0]})
+                self.assertEqual(outcome, "failed")
+                self.assertIn("rejected", reason)
+
+    def test_failed_focus_never_sends_global_keys(self):
+        control = FakeControl("Editor", "EditControl")
+        with patch.object(control, "SetFocus", return_value=False), patch.object(helper.auto, "SendKeys") as send:
+            outcome, _ = helper.run_step(self._window_with(control), {"kind": "key-entry", "path": [0], "text": "hello"})
+        self.assertEqual(outcome, "failed")
+        send.assert_not_called()
 
     def test_click_uses_invoke_pattern(self):
         pattern = FakePattern("Invoke")
