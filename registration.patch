@@ -37,23 +37,14 @@ index c094b6d9f..575d3c282 100644
        identity: MANAGED_STATIC_PROVIDER,
        capabilities: managedStaticCapabilities(),
 diff --git a/src/native/NativeMacOSProviderMetadata.ts b/src/native/NativeMacOSProviderMetadata.ts
-index 6807c5e0d..f69e98c4c 100644
+index 6807c5e0d..659fad1b6 100644
 --- a/src/native/NativeMacOSProviderMetadata.ts
 +++ b/src/native/NativeMacOSProviderMetadata.ts
-@@ -34,19 +34,16 @@ const OWNED_PROCESS_OPERATIONS: ReadonlySet<string> = new Set([
- export const nativeMacOSCapabilities = (
-   platform: NodeJS.Platform = process.platform,
- ): readonly CapabilityDescriptor[] => {
--  const available = platform === "darwin";
-+  // Declare nothing off macOS: auxiliary providers must declare disjoint
-+  // operations, so a host where this provider cannot run at all must not
-+  // claim its operations (the Windows UI provider owns them there).
-+  if (platform !== "darwin") return Object.freeze([]);
-   return Object.freeze(
+@@ -39,36 +39,44 @@ export const nativeMacOSCapabilities = (
      [
        ...NATIVE_TOOL_CONTRACTS,
        { name: "inspect_native_dispatch_metadata" as const },
-     ].map((contract): CapabilityDescriptor => {
+-    ].map((contract): CapabilityDescriptor => {
 -      const availability = available
 -        ? ({ available: true, reason: null } as const)
 -        : ({
@@ -61,7 +52,67 @@ index 6807c5e0d..f69e98c4c 100644
 -            availabilityCode: "unsupported_host",
 -            reason: "Native macOS utilities require macOS.",
 -          } as const);
-+      const availability = { available: true, reason: null } as const;
-       return Object.freeze({
-         provider: NATIVE_MACOS_PROVIDER_IDENTITY,
-         operation: contract.name,
+-      return Object.freeze({
+-        provider: NATIVE_MACOS_PROVIDER_IDENTITY,
+-        operation: contract.name,
+-        ...(contract.name === "inspect_native_dispatch_metadata"
+-          ? { analysisProfile: APPLE_DISPATCH_METADATA_ANALYSIS_PROFILE }
+-          : {}),
+-        ...availability,
+-        effects: Object.freeze({
+-          mutatesArtifact: false,
+-          launchesProcess: contract.name !== "inspect_native_dispatch_metadata",
+-          mayShowUi: OWNED_PROCESS_OPERATIONS.has(contract.name),
+-          mayAccessNetwork: OWNED_PROCESS_OPERATIONS.has(contract.name),
+-          mayWriteFilesystem:
+-            OWNED_PROCESS_OPERATIONS.has(contract.name) ||
+-            contract.name === "observe_native_ui",
+-          changesPermissions: false,
+-          requiresRoot: false,
+-        }),
+-        limitations: Object.freeze([
+-          "Availability and textual formats depend on the installed macOS/Xcode toolchain.",
+-        ]),
+-      });
+-    }),
++    ]
++      .filter(
++        (contract) =>
++          platform !== "win32" ||
++          (contract.name !== "observe_native_ui" &&
++            contract.name !== "capture_native_ui_scenario"),
++      )
++      .map((contract): CapabilityDescriptor => {
++        const availability = available
++          ? ({ available: true, reason: null } as const)
++          : ({
++              available: false,
++              availabilityCode: "unsupported_host",
++              reason: "Native macOS utilities require macOS.",
++            } as const);
++        return Object.freeze({
++          provider: NATIVE_MACOS_PROVIDER_IDENTITY,
++          operation: contract.name,
++          ...(contract.name === "inspect_native_dispatch_metadata"
++            ? { analysisProfile: APPLE_DISPATCH_METADATA_ANALYSIS_PROFILE }
++            : {}),
++          ...availability,
++          effects: Object.freeze({
++            mutatesArtifact: false,
++            launchesProcess:
++              contract.name !== "inspect_native_dispatch_metadata",
++            mayShowUi: OWNED_PROCESS_OPERATIONS.has(contract.name),
++            mayAccessNetwork: OWNED_PROCESS_OPERATIONS.has(contract.name),
++            mayWriteFilesystem:
++              OWNED_PROCESS_OPERATIONS.has(contract.name) ||
++              contract.name === "observe_native_ui",
++            changesPermissions: false,
++            requiresRoot: false,
++          }),
++          limitations: Object.freeze([
++            "Availability and textual formats depend on the installed macOS/Xcode toolchain.",
++          ]),
++        });
++      }),
+   );
+ };
