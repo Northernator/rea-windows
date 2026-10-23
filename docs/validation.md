@@ -40,6 +40,7 @@ close a user's existing document.
 | Installer syntax and registration patch | `bash -n`, whitespace checks, and a reverse dry-run of `registration.patch` against the installed REA checkout passed. |
 | Windows native-addon artifact verification | Passed after restoring the exact matching published artifact; manifest version, SHA-256, and PE architecture checks succeeded. |
 | HyperFrames demo check | Passed: 0 errors, 0 warnings, 0 infos; all 17 contrast checks passed. |
+| README GIF export | Verified: 960 × 540, 360 frames, exactly 30 seconds, infinite loop, 1,113,896 bytes. All frames decoded; selected frames and literal/Unicode read-back were visually reviewed. |
 | HyperFrames delivery render | Verified `demo/REA-Windows-demo.mp4`: 30 seconds, 1920 × 1080, 30 fps, 900 H.264 frames, AAC stereo at 48 kHz, 2,585,158 bytes. Decoded frames were reviewed; audio measured −23 LUFS with no clipping. |
 | Direct helper against Notepad | Observed 26 nodes, editor path `[0]`, and 1955 × 1486 PNGs; key-entry read-back exactly matched `REA Windows: literal {Enter} + Unicode café ✓`. |
 | `examples/notepad_cli.py` through the real REA CLI | Passed with exit code 0: `observe-native-ui` and `capture-native-ui-scenario` both selected `provider.id = native-windows`; exact literal/Unicode text read-back and PNG digests were verified. |

@@ -32,6 +32,15 @@ Delivered `REA-Windows-demo.mp4`: 2,585,158 bytes; FFprobe reports exactly 30.00
 
 The render printed no Framey handoff or download line. The editable preview remains available; no additional app promotion was inferred. One concise HyperFrames feedback report was submitted under the skill workflow.
 
+## README GIF export
+
+The published README uses `REA-Windows-demo.gif`, exported from the verified MP4
+with FFmpeg: 960×540, 360 frames at 12 fps, exactly 30 seconds, infinite looping,
+and 1,113,896 bytes. The GIF is silent. Every frame decoded successfully; samples
+at 0, 1, 6.5, 11, 16, 21.5, 25.5, and 28.5 seconds were inspected. The CLI excerpts,
+literal/Unicode read-back, native screenshots, and final repository URL remain
+legible. The GIF is versioned for direct rendering in GitHub's README.
+
 ## Windows tooling notes
 
 The existing Scoop FFmpeg shim failed on this host. The installed WinGet FFmpeg 8.1.2 binary worked, so its bin directory was prepended for rendering. No package was installed. `CI=1` avoids HyperFrames' detached five-minute warm-check worker holding an agent shell open after a successful check. The preview intentionally remains running for editing.

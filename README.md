@@ -8,6 +8,8 @@ This repository adds Windows implementations of `observe-native-ui` and
 `capture-native-ui-scenario` to a separate REA source checkout. It contains the
 provider sources and Python helper; it is not a standalone copy of REA.
 
+[Watch the animated demo](#demo-video).
+
 ```
 app window ──► UIA tree ──► nativeUiSnapshot envelope ──► REA evidence
                  (Python        (integer node paths,
@@ -117,6 +119,11 @@ that window; paths can change when the interface changes. See
 | `wait` | `milliseconds` | Waits within the configured operation deadline. |
 
 ## Demo video
+
+![REA Windows observing Notepad, entering text, and verifying read-back](demo/REA-Windows-demo.gif)
+
+30-second silent GIF of the real Notepad test, including literal `{Enter}` and
+Unicode text read-back. [Download the GIF](demo/REA-Windows-demo.gif).
 
 The [HyperFrames demo](demo/README.md) uses the captured Notepad screenshots and
 CLI evidence. Its source includes the assets needed to preview or render it:
