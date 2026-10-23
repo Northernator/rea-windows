@@ -8,9 +8,11 @@ import {
   AnalysisCancelledError,
   AnalysisCapabilityUnavailableError,
   AnalysisInputError,
+  AnalysisTimeoutError,
 } from "../domain/analysisErrorCore.js";
 import { err, ok, type Result } from "../domain/result.js";
 import type { AnalysisError } from "../domain/analysisErrorBase.js";
+import type { AnalysisPartialObservation } from "../domain/analysisErrorBase.js";
 import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import type { JsonValue } from "../domain/jsonValue.js";
 import {
@@ -27,24 +29,30 @@ import {
   findWindowsHelperPython,
 } from "./NativeUiHelperRuntimeWindows.js";
 import { observeNativeUiWindows } from "./NativeUiObservationWindows.js";
+import { ProviderStartupDeadline } from "../process/ProviderDeadline.js";
+import { ProviderAdapterError } from "../domain/providerAdapterError.js";
+import { snapshotEnvironment } from "../process/snapshotEnvironment.js";
 
 /** Operations this provider accepts. */
-type WindowsUiOperation = "health" | "observe_native_ui" | "capture_native_ui_scenario";
+type WindowsUiOperation =
+  | "health"
+  | "observe_native_ui"
+  | "capture_native_ui_scenario";
 
 /**
  * Windows UI Automation provider.
  *
  * Observes and drives already-running application windows. The Python helper
- * interpreter is probed once per client; a missing interpreter or package
- * fails the operation with the probe reason rather than claiming support.
+ * interpreter is cached after a successful probe; a missing interpreter or
+ * package fails the operation and can be retried after the host is repaired.
  */
 export class NativeWindowsProvider {
   readonly #environment: Readonly<NodeJS.ProcessEnv>;
-  #probe: Promise<string | undefined> | undefined;
+  #python: string | undefined;
   #closed = false;
 
   constructor(environment: Readonly<NodeJS.ProcessEnv>) {
-    this.#environment = environment;
+    this.#environment = snapshotEnvironment(environment);
   }
 
   identity() {
@@ -56,8 +64,8 @@ export class NativeWindowsProvider {
   }
 
   /**
-   * Bind one target. The window handle arrives per call, so the client is the
-   * provider itself; the target is recorded for evidence locations only.
+   * Bind one executable target. Each request must identify a window belonging
+   * to that executable; clients own their cancellation and close lifecycle.
    */
   createClient(
     target: BinaryTarget,
@@ -71,7 +79,8 @@ export class NativeWindowsProvider {
     operation: WindowsUiOperation,
     parameters: Readonly<Record<string, JsonValue>>,
     options?: { readonly signal?: AbortSignal },
-  ): Promise<Result<unknown, AnalysisError>> {
+    target?: BinaryTarget,
+  ): Promise<Result<AnalysisExecution, AnalysisError>> {
     if (this.#closed)
       return err(
         new AnalysisCapabilityUnavailableError(
@@ -81,7 +90,9 @@ export class NativeWindowsProvider {
         ),
       );
     if (operation === "health")
-      return ok(createAnalysisExecution(null, NATIVE_WINDOWS_PROVIDER_IDENTITY));
+      return ok(
+        createAnalysisExecution(null, NATIVE_WINDOWS_PROVIDER_IDENTITY),
+      );
     if (options?.signal?.aborted === true)
       return err(
         new AnalysisCancelledError(operation, { cause: options.signal.reason }),
@@ -112,33 +123,94 @@ export class NativeWindowsProvider {
         }),
       );
 
-    this.#probe ??= findWindowsHelperPython(this.#environment);
-    const python = await this.#probe;
-    if (python === undefined)
+    if (target === undefined)
       return err(
-        new AnalysisCapabilityUnavailableError(
-          NATIVE_WINDOWS_PROVIDER_IDENTITY.id,
-          operation,
-          "No Python interpreter with uiautomation and Pillow importable. Install them and set REA_WINDOWS_PYTHON or add python to PATH.",
-        ),
+        new AnalysisInputError(operation, {
+          cause: new Error(
+            "Windows UI operations require a client bound to an executable target",
+          ),
+        }),
       );
 
-    const observation = await observeNativeUiWindows(operation, parameters, {
-      invoke: createWindowsUiHelper(
-        python,
-        Math.min(deadline.timeoutMs, MAX_NATIVE_TIMER_MS),
-      ),
-      signal: options?.signal,
-    });
-    return observation.ok
-      ? ok(
-          createAnalysisExecution(
-            observation.value,
-            NATIVE_WINDOWS_PROVIDER_IDENTITY,
-            { limitations: observation.value.limitations },
+    // The caller's deadline covers interpreter discovery as well as capture.
+    const control = new ProviderStartupDeadline(
+      deadline.timeoutMs,
+      options?.signal,
+    );
+    const interrupted = (
+      partialObservation?: AnalysisPartialObservation,
+    ): AnalysisError | undefined =>
+      control.interruption === "cancelled"
+        ? new AnalysisCancelledError(operation, {
+            cause: options?.signal?.reason,
+            partialObservation,
+          })
+        : control.interruption === "timeout"
+          ? new AnalysisTimeoutError(operation, deadline.timeoutMs, {
+              partialObservation,
+            })
+          : undefined;
+    try {
+      const python =
+        this.#python ??
+        (await findWindowsHelperPython(
+          this.#environment,
+          Math.min(10_000, control.remainingMs()),
+          control.signal,
+        ));
+      const interruption = interrupted();
+      if (interruption !== undefined) return err(interruption);
+      if (python === undefined)
+        return err(
+          new AnalysisCapabilityUnavailableError(
+            NATIVE_WINDOWS_PROVIDER_IDENTITY.id,
+            operation,
+            "No Python interpreter with uiautomation and Pillow importable. Install them and set REA_WINDOWS_PYTHON or add python to PATH.",
           ),
-        )
-      : observation;
+        );
+      this.#python = python;
+      const observation = await observeNativeUiWindows(
+        target,
+        operation,
+        parameters,
+        {
+          invoke: createWindowsUiHelper(
+            python,
+            Math.max(1, control.remainingMs()),
+            this.#environment,
+          ),
+          signal: control.signal,
+        },
+      );
+      const after = interrupted(
+        observation.ok
+          ? observation.value
+          : observation.error.partialObservation,
+      );
+      if (after !== undefined) return err(after);
+      return observation.ok
+        ? ok(
+            createAnalysisExecution(
+              observation.value,
+              NATIVE_WINDOWS_PROVIDER_IDENTITY,
+              {
+                limitations: observation.value.limitations,
+              },
+            ),
+          )
+        : observation;
+    } catch (cause: unknown) {
+      return err(
+        interrupted() ??
+          new ProviderAdapterError(
+            NATIVE_WINDOWS_PROVIDER_IDENTITY.id,
+            operation,
+            { cause },
+          ),
+      );
+    } finally {
+      control.dispose();
+    }
   }
 
   async close(): Promise<Result<null, AnalysisError>> {
@@ -150,9 +222,16 @@ export class NativeWindowsProvider {
 /** Client bound to one target; delegates to the provider's operations. */
 class NativeWindowsClient implements AnalysisClient {
   readonly #provider: NativeWindowsProvider;
+  readonly #target: BinaryTarget;
+  readonly #closing = new AbortController();
+  readonly #pending = new Set<
+    Promise<Result<AnalysisExecution, AnalysisError>>
+  >();
+  #tail: Promise<unknown> = Promise.resolve();
 
-  constructor(provider: NativeWindowsProvider, _target: BinaryTarget) {
+  constructor(provider: NativeWindowsProvider, target: BinaryTarget) {
     this.#provider = provider;
+    this.#target = target;
   }
 
   execute(
@@ -174,14 +253,32 @@ class NativeWindowsClient implements AnalysisClient {
           ),
         ),
       );
-    return this.#provider.execute(
-      operation as WindowsUiOperation,
-      parameters,
-      options,
-    ) as Promise<Result<AnalysisExecution, AnalysisError>>;
+    if (this.#closing.signal.aborted)
+      return Promise.resolve(
+        err(
+          new AnalysisCapabilityUnavailableError(
+            NATIVE_WINDOWS_PROVIDER_IDENTITY.id,
+            operation,
+            "Windows UI provider client is closed",
+          ),
+        ),
+      );
+    const signal =
+      options?.signal === undefined
+        ? this.#closing.signal
+        : AbortSignal.any([options.signal, this.#closing.signal]);
+    const pending = this.#tail.then(() =>
+      this.#provider.execute(operation, parameters, { signal }, this.#target),
+    );
+    this.#tail = pending;
+    this.#pending.add(pending);
+    void pending.finally(() => this.#pending.delete(pending));
+    return pending;
   }
 
-  close(): Promise<Result<null, AnalysisError>> {
-    return this.#provider.close();
+  async close(): Promise<Result<null, AnalysisError>> {
+    this.#closing.abort(new Error("Windows UI provider client is closed"));
+    await Promise.allSettled(this.#pending);
+    return ok(null);
   }
 }

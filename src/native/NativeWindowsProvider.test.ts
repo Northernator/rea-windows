@@ -1,6 +1,30 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
+import {
+  createWindowsUiHelper,
+  findWindowsHelperPython,
+} from "./NativeUiHelperRuntimeWindows.js";
+
+vi.mock("./NativeUiHelperRuntimeWindows.js", () => ({
+  findWindowsHelperPython: vi.fn(),
+  createWindowsUiHelper: vi.fn(),
+}));
+
+const target: BinaryTarget = {
+  kind: "executable",
+  format: "pe",
+  path: "C:\\app\\App.exe",
+  sha256: "a".repeat(64),
+  architecture: "x86_64",
+  availableArchitectures: ["x86_64"],
+  executableRole: "application",
+  managed: false,
+};
+
+beforeEach(() => vi.resetAllMocks());
 
 import { NativeWindowsProvider } from "./NativeWindowsProvider.js";
+import { nativeMacOSCapabilities } from "./NativeMacOSProviderMetadata.js";
 import {
   NATIVE_WINDOWS_PROVIDER_IDENTITY,
   nativeWindowsCapabilities,
@@ -47,8 +71,8 @@ describe("nativeWindowsCapabilities", () => {
     expect(windows.every((capability) => capability.available)).toBe(true);
 
     const linux = nativeWindowsCapabilities("linux");
-    expect(linux.every((capability) => !capability.available)).toBe(true);
-    expect(linux[0]?.reason).toContain("Windows");
+    expect(linux).toEqual([]);
+    expect(nativeWindowsCapabilities("darwin")).toEqual([]);
   });
 
   it("marks scenario capture as UI-driving", () => {
@@ -62,6 +86,21 @@ describe("nativeWindowsCapabilities", () => {
     );
     expect(observe?.effects.mutatesArtifact).toBe(false);
   });
+
+  it.each(["win32", "darwin", "linux"] as const)(
+    "keeps UI declarations disjoint on %s",
+    (platform) => {
+      const windows = nativeWindowsCapabilities(platform);
+      const macos = nativeMacOSCapabilities(platform);
+      const macosOperations = new Set(macos.map(({ operation }) => operation));
+      expect(
+        windows.some(({ operation }) => macosOperations.has(operation)),
+      ).toBe(false);
+      expect(macosOperations.has("inspect_native_dispatch_metadata")).toBe(
+        true,
+      );
+    },
+  );
 });
 
 describe("NativeWindowsProvider", () => {
@@ -83,7 +122,9 @@ describe("NativeWindowsProvider", () => {
       PYTHON: "definitely-not-python-xyz",
       PATH: "",
     });
-    const result = await provider.execute("observe_native_ui", baseParameters);
+    const result = await provider
+      .createClient(target)
+      .execute("observe_native_ui", baseParameters);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(JSON.stringify(result.error)).toContain("No Python interpreter");
@@ -119,5 +160,111 @@ describe("NativeWindowsProvider", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(JSON.stringify(result.error)).toContain("AnalysisInputError");
+  });
+
+  it("keeps another target client usable when one closes", async () => {
+    const provider = new NativeWindowsProvider({});
+    const first = provider.createClient(target);
+    const second = provider.createClient(target);
+    await first.close();
+    expect((await second.execute("health", {})).ok).toBe(true);
+    expect((await first.execute("health", {})).ok).toBe(false);
+  });
+
+  it("binds the selected target and keeps the caller environment", async () => {
+    vi.mocked(findWindowsHelperPython).mockResolvedValue("python");
+    vi.mocked(createWindowsUiHelper).mockReturnValue(async () => ({
+      ok: true,
+      result: snapshot,
+    }));
+    const provider = new NativeWindowsProvider({
+      PATH: "selected-path",
+      SYSTEMROOT: "selected-root",
+    });
+    const result = await provider
+      .createClient(target)
+      .execute("observe_native_ui", baseParameters);
+    expect(result.ok).toBe(true);
+    expect(findWindowsHelperPython).toHaveBeenCalledWith(
+      expect.objectContaining({ PATH: "selected-path" }),
+      expect.any(Number),
+      expect.any(AbortSignal),
+    );
+    expect(createWindowsUiHelper).toHaveBeenCalledWith(
+      "python",
+      expect.any(Number),
+      expect.objectContaining({ SYSTEMROOT: "selected-root" }),
+    );
+  });
+
+  it("cancels and waits for its running helper when closed", async () => {
+    vi.mocked(findWindowsHelperPython).mockResolvedValue("python");
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    vi.mocked(createWindowsUiHelper).mockReturnValue(
+      async (_parameters, signal) => {
+        started();
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new Error("stopped")),
+            { once: true },
+          );
+        });
+      },
+    );
+    const client = new NativeWindowsProvider({}).createClient(target);
+    const pending = client.execute("observe_native_ui", baseParameters);
+    await ready;
+    await client.close();
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error._tag).toBe("AnalysisCancelledError");
+  });
+
+  it("applies the UI deadline to interpreter probing", async () => {
+    vi.mocked(findWindowsHelperPython).mockImplementation(
+      async (_environment, _timeout, signal) => {
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new Error("stopped")),
+            { once: true },
+          );
+        });
+      },
+    );
+    const result = await new NativeWindowsProvider({})
+      .createClient(target)
+      .execute("observe_native_ui", {
+        ...baseParameters,
+        native_ui_deadline_ms: 5,
+      });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error._tag).toBe("AnalysisTimeoutError");
+    expect(createWindowsUiHelper).not.toHaveBeenCalled();
+  });
+
+  it("retains a validated capture when cancellation reaches finalization", async () => {
+    vi.mocked(findWindowsHelperPython).mockResolvedValue("python");
+    const controller = new AbortController();
+    vi.mocked(createWindowsUiHelper).mockReturnValue(async () => {
+      controller.abort("cancel after capture");
+      return { ok: true, result: snapshot };
+    });
+    const result = await new NativeWindowsProvider({})
+      .createClient(target)
+      .execute("observe_native_ui", baseParameters, {
+        signal: controller.signal,
+      });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error._tag).toBe("AnalysisCancelledError");
+    expect(result.error.partialObservation).toMatchObject({
+      target_sha256: target.sha256,
+      initial: snapshot,
+    });
   });
 });

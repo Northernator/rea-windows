@@ -1,4 +1,7 @@
-import { execFileOutput } from "../process/ExecFileOutput.js";
+import {
+  execFileOutput,
+  ExecFileOutputCancelledError,
+} from "../process/ExecFileOutput.js";
 import { safeParseJson } from "../domain/safeJson.js";
 import { DEFAULT_NATIVE_UI_DEADLINE_MS } from "../domain/native/nativeDeadlines.js";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -23,6 +26,7 @@ const invokeWindowsHelper = async (
   parameters: Readonly<Record<string, unknown>>,
   timeoutMs: number,
   signal?: AbortSignal,
+  environment: Readonly<NodeJS.ProcessEnv> = process.env,
 ): Promise<unknown> => {
   const root = await mkdtemp(join(tmpdir(), "rea-native-ui-win-"));
   const paramsPath = join(root, "parameters.json");
@@ -31,8 +35,9 @@ const invokeWindowsHelper = async (
     const output = await execFileOutput(python, [HELPER_SCRIPT, paramsPath], {
       timeout: timeoutMs,
       maxBuffer: 64 * 1024 * 1024,
-      env: { PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
+      env: { ...environment, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
       signal,
+      stopSignal: "SIGTERM",
     });
     const stdout = output.stdout.trim();
     const parsed = safeParseJson(stdout);
@@ -56,6 +61,7 @@ const invokeWindowsHelper = async (
 export const findWindowsHelperPython = async (
   environment: Readonly<NodeJS.ProcessEnv>,
   timeoutMs: number = 10_000,
+  signal?: AbortSignal,
 ): Promise<string | undefined> => {
   const candidates = [
     environment.REA_WINDOWS_PYTHON,
@@ -64,16 +70,23 @@ export const findWindowsHelperPython = async (
     "python",
     "python3",
     "py",
-  ].filter((value): value is string => typeof value === "string" && value.length > 0);
-  for (const candidate of candidates) {
+  ].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+  for (const candidate of new Set(candidates)) {
+    if (signal?.aborted) throw new ExecFileOutputCancelledError(signal.reason);
     try {
       await execFileOutput(candidate, ["-c", "import uiautomation, PIL"], {
         timeout: timeoutMs,
         maxBuffer: 4096,
-        env: { PYTHONUTF8: "1" },
+        env: { ...environment, PYTHONUTF8: "1" },
+        signal,
+        stopSignal: "SIGTERM",
       });
       return candidate;
     } catch {
+      if (signal?.aborted)
+        throw new ExecFileOutputCancelledError(signal.reason);
       // try the next candidate
     }
   }
@@ -84,7 +97,8 @@ export const findWindowsHelperPython = async (
 export const createWindowsUiHelper = (
   python: string,
   timeoutMs: number = DEFAULT_NATIVE_UI_DEADLINE_MS,
+  environment: Readonly<NodeJS.ProcessEnv> = process.env,
 ): NativeUiHelper => {
   return (parameters, signal) =>
-    invokeWindowsHelper(python, parameters, timeoutMs, signal);
+    invokeWindowsHelper(python, parameters, timeoutMs, signal, environment);
 };
