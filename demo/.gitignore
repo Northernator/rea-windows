@@ -1,0 +1,6 @@
+node_modules/
+.hyperframes/
+.media/
+.thumbnails/
+REA-Windows-demo.mp4
+renders/

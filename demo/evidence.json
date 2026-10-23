@@ -1,0 +1,32 @@
+{
+  "validationLevel": "Real REA CLI; native-windows provider; local Windows Notepad",
+  "appName": "Windows Notepad",
+  "screenshot": "assets/evidence/notepad-after.png",
+  "observeCommand": "observe-native-ui\n\"C:\\Windows\\System32\\notepad.exe\"\n--pid 21380 --window-id 2954584 --json",
+  "observeLines": [
+    "provider.id: \"native-windows\"",
+    "nodes.length: 26",
+    "editor.path: [0]",
+    "editor.role: \"EditControl\"",
+    "screenshot: PNG · 1955 × 1486",
+    "confidence: \"observed\""
+  ],
+  "actionCommand": "capture-native-ui-scenario\n\"C:\\Windows\\System32\\notepad.exe\"\n--pid 21380 --window-id 2954584 --json",
+  "actionLines": [
+    "--steps '[{\"kind\":\"key-entry\",\"path\":[0],",
+    "\"text\":\"REA Windows: literal {Enter} + Unicode café ✓\"}]'",
+    "outcome: \"completed\"",
+    "restore: \"leave-as-is\""
+  ],
+  "readback": "REA Windows: literal {Enter} + Unicode café ✓",
+  "repoUrl": "https://github.com/Northernator/rea-windows",
+  "repoLabel": "github.com/Northernator/rea-windows",
+  "screenshotSha256": "194cec9cdba5e41060849eed24e2529677fd2144ef533018ef1876d57153164e",
+  "targetSha256": "da5807bb0997cc6b5132950ec87eda2b33b1ac4533cf1f7a22a6f3b576ed7c5b",
+  "sources": [
+    "../artifacts/notepad/summary.json",
+    "../artifacts/notepad/observe.json",
+    "../artifacts/notepad/scenario.json"
+  ],
+  "note": "On-screen command excerpts omit the absolute path to scripts/rea.mjs. Full exact command arrays remain in the validation summary."
+}

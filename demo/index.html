@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en" data-resolution="landscape" data-composition-variables='[{"id":"product","type":"string","label":"Product name","default":"REA Windows"},{"id":"accent","type":"color","label":"Accent","default":"#f15a24"}]'>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1920, height=1080">
+  <title>REA Windows — native UI, real evidence</title>
+  <script src="assets/vendor/gsap.min.js"></script>
+  <style>
+    *{box-sizing:border-box} html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#e9ecef}
+    #root{position:relative;width:1920px;height:1080px;overflow:hidden}
+    .scene{position:absolute;inset:0;width:1920px;height:1080px}
+  </style>
+</head>
+<body>
+  <div data-hf-id="hf-4l7j" id="root" data-composition-id="main" data-start="0" data-duration="30" data-width="1920" data-height="1080" data-fps="30">
+    <div data-hf-id="hf-ichp" id="window" class="clip scene" data-hold="true" data-composition-id="window" data-composition-src="compositions/window.html" data-start="0" data-duration="4" data-width="1920" data-height="1080" data-track-index="0" data-track-kind="graphics"></div>
+    <div data-hf-id="hf-ljxa" id="observe" class="clip scene" data-hold="true" data-composition-id="observe" data-composition-src="compositions/observe.html" data-start="4" data-duration="5" data-width="1920" data-height="1080" data-track-index="0" data-track-kind="graphics"></div>
+    <div data-hf-id="hf-9kml" id="bridge" class="clip scene" data-composition-id="bridge" data-composition-src="compositions/bridge.html" data-start="9" data-duration="4" data-width="1920" data-height="1080" data-track-index="0" data-track-kind="graphics"></div>
+    <div data-hf-id="hf-z6xh" id="action" class="clip scene" data-composition-id="action" data-composition-src="compositions/action.html" data-start="13" data-duration="6" data-width="1920" data-height="1080" data-track-index="0" data-track-kind="graphics"></div>
+    <div data-hf-id="hf-1ilz" id="readback" class="clip scene" data-hold="true" data-composition-id="readback" data-composition-src="compositions/readback.html" data-start="19" data-duration="5" data-width="1920" data-height="1080" data-track-index="0" data-track-kind="graphics"></div>
+    <div data-hf-id="hf-pxyi" id="proof" class="clip scene" data-composition-id="proof" data-composition-src="compositions/proof.html" data-start="24" data-duration="3" data-width="1920" data-height="1080" data-track-index="0" data-track-kind="graphics"></div>
+    <div data-hf-id="hf-arhi" id="end" class="clip scene" data-composition-id="end" data-composition-src="compositions/end.html" data-start="27" data-duration="3" data-width="1920" data-height="1080" data-track-index="0" data-track-kind="graphics"></div>
+    <audio data-hf-id="hf-4w8a" id="music-bed" class="clip" src="assets/audio/cipher-bed.m4a" data-start="0" data-duration="30" data-volume="0.75" data-track-index="2"></audio>
+    <audio data-hf-id="hf-bu2w" id="sound-open" class="clip" src="assets/audio/click.mp3" data-start="0" data-duration="0.4" data-volume="0.26" data-track-index="1"></audio>
+    <audio data-hf-id="hf-bde5" id="sound-observe" class="clip" src="assets/audio/whoosh.mp3" data-start="4" data-duration="0.6" data-volume="0.18" data-track-index="1"></audio>
+    <audio data-hf-id="hf-75bq" id="sound-name" class="clip" src="assets/audio/click.mp3" data-start="9" data-duration="0.4" data-volume="0.24" data-track-index="1"></audio>
+    <audio data-hf-id="hf-9m09" id="sound-action" class="clip" src="assets/audio/click.mp3" data-start="15.2" data-duration="0.4" data-volume="0.27" data-track-index="1"></audio>
+    <audio data-hf-id="hf-se33" id="sound-verified" class="clip" src="assets/audio/chime.mp3" data-start="20" data-duration="2.5" data-volume="0.3" data-fade-out="0.4" data-track-index="1"></audio>
+    <audio data-hf-id="hf-aned" id="sound-return" class="clip" src="assets/audio/whoosh.mp3" data-start="24" data-duration="0.6" data-volume="0.18" data-track-index="1"></audio>
+    <audio data-hf-id="hf-90ts" id="sound-end" class="clip" src="assets/audio/click.mp3" data-start="27" data-duration="0.4" data-volume="0.24" data-track-index="1"></audio>
+  </div>
+  <script>window.__timelines=window.__timelines||{};window.__timelines.main=gsap.timeline({paused:true});</script>
+</body>
+</html>
