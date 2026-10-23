@@ -263,6 +263,14 @@ class StepTests(unittest.TestCase):
             self.assertEqual(helper.run_step(None, {"kind": "wait", "milliseconds": 1000}, deadline=10.1)[0], "cancelled")
             sleep.assert_not_called()
 
+    def test_expired_deadline_prevents_action(self):
+        pattern = FakePattern("Invoke")
+        control = FakeControl("OK", "ButtonControl", [pattern])
+        with patch.object(helper.time, "monotonic", return_value=10):
+            outcome, _ = helper.run_step(self._window_with(control), {"kind": "click", "path": [0]}, deadline=9)
+        self.assertEqual(outcome, "cancelled")
+        self.assertFalse(pattern.invoked)
+
     def test_key_entry_requires_exact_read_back(self):
         control = FakeControl("Editor", "DocumentControl")
         with patch.object(helper, "control_value", return_value="old hello"), patch.object(helper.auto, "SendKeys"):
@@ -324,6 +332,13 @@ class ValueReadingTests(unittest.TestCase):
 
 
 class EnvelopeTests(unittest.TestCase):
+    def test_unknown_process_identity_fails_before_action(self):
+        metadata = {"pid": 10, "window_id": 20, "executable": "test.exe", "launch_time": 0}
+        with patch.object(helper, "window_metadata", return_value=metadata), patch("builtins.print") as printed:
+            with self.assertRaises(SystemExit):
+                helper.validate_target(None, {"pid": 10, "window_id": 20})
+        self.assertEqual(json.loads(printed.call_args.args[0])["code"], "target_unavailable")
+
     def test_target_pid_mismatch_fails_before_action(self):
         metadata = {"pid": 10, "window_id": 20, "executable": "test.exe", "launch_time": 1}
         with patch.object(helper, "window_metadata", return_value=metadata), patch("builtins.print") as printed:

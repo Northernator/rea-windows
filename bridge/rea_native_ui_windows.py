@@ -217,6 +217,8 @@ def resolve_by_path(window, path: list[int]):
 
 def run_step(window, step: dict, deadline: float | None = None) -> tuple[str, str | None]:
     """Execute one declarative step. Returns (outcome, reason)."""
+    if deadline is not None and time.monotonic() >= deadline:
+        return "cancelled", "operation deadline exceeded before action"
     if not isinstance(step, dict):
         return "failed", "step must be an object"
     kind = step.get("kind")
@@ -311,6 +313,8 @@ def validate_target(window, params: dict, initial: dict | None = None) -> dict:
     metadata = window_metadata(window)
     if metadata["window_id"] != params["window_id"] or metadata["pid"] <= 0:
         fail("target_unavailable", "window handle is no longer valid")
+    if not metadata["executable"] or metadata["launch_time"] <= 0:
+        fail("target_unavailable", "cannot establish the window process identity")
     if params.get("pid") is not None and metadata["pid"] != params["pid"]:
         fail("target_mismatch", "window does not belong to the requested pid")
     expected = params.get("executable")
@@ -350,6 +354,7 @@ def main() -> None:
         fail("invalid_input", "steps must be an array of objects")
     if "executable" in params and not isinstance(params["executable"], str):
         fail("invalid_input", "executable must be a path string")
+    deadline = time.monotonic() + (params.get("native_ui_deadline_ms", DEFAULT_DEADLINE_MS) / 1000.0)
 
     try:
         window = auto.ControlFromHandle(window_id)
@@ -370,14 +375,14 @@ def main() -> None:
     if params.get("sha256") is not None and params["sha256"] != target_sha256:
         fail("target_mismatch", "window executable digest does not match the requested target")
 
-    deadline = time.monotonic() + (int(params.get("native_ui_deadline_ms", DEFAULT_DEADLINE_MS)) / 1000.0)
-
     steps = params.get("steps") or []
     if not steps:
         if time.monotonic() > deadline:
             fail("deadline_exceeded", "deadline exceeded before observation")
         result = snapshot(window, params)
         validate_target(window, params, identity)
+        if time.monotonic() >= deadline:
+            fail("deadline_exceeded", "deadline exceeded during observation")
         print(json.dumps({"ok": True, "result": result}))
         return
 
@@ -411,6 +416,8 @@ def main() -> None:
                 "reason": reason,
             }
         )
+        if outcome == "cancelled":
+            break
     result = {
         "target_sha256": target_sha256,
         "initial": initial,
