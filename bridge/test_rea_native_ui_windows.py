@@ -34,6 +34,7 @@ def _install_fake_uiautomation():
     module.PatternId = PatternId
     module.SendKey = lambda text: None
     module.SendKeys = lambda text: None
+    module.ScrollAmount = types.SimpleNamespace(NoAmount=2, SmallIncrement=4, SmallDecrement=1)
     module.GetRootControl = lambda: None
     sys.modules["uiautomation"] = module
     return module
@@ -72,11 +73,11 @@ class FakePattern:
         self.scrolled = (horizontal, vertical)
 
     @property
-    def CurrentValue(self):
+    def Value(self):
         return self._value
 
     @property
-    def CurrentIsReadOnly(self):
+    def IsReadOnly(self):
         return False
 
     @property
@@ -244,7 +245,38 @@ class StepTests(unittest.TestCase):
             {"kind": "scroll", "path": [0], "direction": "decrement"},
         )
         self.assertEqual(outcome, "completed")
-        self.assertEqual(pattern.scrolled, (0, -1))
+        self.assertEqual(pattern.scrolled, (2, 1))
+
+    def test_scroll_increment_does_not_scroll_horizontally(self):
+        pattern = FakePattern("Scroll")
+        control = FakeControl("List", "ListControl", [pattern])
+        self.assertEqual(helper.run_step(self._window_with(control), {"kind": "scroll", "path": [0], "direction": "increment"})[0], "completed")
+        self.assertEqual(pattern.scrolled, (2, 4))
+
+    def test_negative_or_boolean_paths_fail(self):
+        for path in ([-1], [True], ["0"]):
+            self.assertEqual(helper.run_step(None, {"kind": "click", "path": path})[0], "failed")
+
+    def test_wait_rejects_negative_and_respects_deadline(self):
+        self.assertEqual(helper.run_step(None, {"kind": "wait", "milliseconds": -1})[0], "failed")
+        with patch.object(helper.time, "sleep") as sleep, patch.object(helper.time, "monotonic", return_value=10):
+            self.assertEqual(helper.run_step(None, {"kind": "wait", "milliseconds": 1000}, deadline=10.1)[0], "cancelled")
+            sleep.assert_not_called()
+
+    def test_key_entry_requires_exact_read_back(self):
+        control = FakeControl("Editor", "DocumentControl")
+        with patch.object(helper, "control_value", return_value="old hello"), patch.object(helper.auto, "SendKeys"):
+            outcome, reason = helper.run_step(self._window_with(control), {"kind": "key-entry", "path": [0], "text": "hello"})
+        self.assertEqual(outcome, "failed")
+        self.assertIn("exact text", reason)
+
+    def test_key_entry_escapes_sendkeys_syntax_and_replaces(self):
+        control = FakeControl("Editor", "DocumentControl")
+        with patch.object(helper, "control_value", return_value="{Enter}"), patch.object(helper.auto, "SendKeys") as send:
+            outcome, _ = helper.run_step(self._window_with(control), {"kind": "key-entry", "path": [0], "text": "{Enter}"})
+        self.assertEqual(outcome, "completed")
+        self.assertEqual(send.call_args_list[0].args, ("{Ctrl}a",))
+        self.assertEqual(send.call_args_list[1].args, ("{{}Enter{}}",))
 
     def test_wait_is_capped(self):
         outcome, reason = helper.run_step(None, {"kind": "wait", "milliseconds": 10})
@@ -270,6 +302,9 @@ class StepTests(unittest.TestCase):
 
 
 class ValueReadingTests(unittest.TestCase):
+    def test_empty_value_is_observable(self):
+        control = FakeControl("Editor", "EditControl", [FakePattern("Value", value="")])
+        self.assertEqual(helper.control_value(control), "")
     def test_value_pattern_wins(self):
         control = FakeControl(
             "Editor",
@@ -279,7 +314,7 @@ class ValueReadingTests(unittest.TestCase):
         self.assertEqual(helper.control_value(control), "from-value")
 
     def test_text_pattern_is_the_fallback(self):
-        # Win11 Notepad exposes a ValuePattern whose CurrentValue is null.
+        # Some editors expose a ValuePattern whose Value is null.
         control = FakeControl(
             "Editor",
             "DocumentControl",
@@ -289,6 +324,26 @@ class ValueReadingTests(unittest.TestCase):
 
 
 class EnvelopeTests(unittest.TestCase):
+    def test_target_pid_mismatch_fails_before_action(self):
+        metadata = {"pid": 10, "window_id": 20, "executable": "test.exe", "launch_time": 1}
+        with patch.object(helper, "window_metadata", return_value=metadata), patch("builtins.print") as printed:
+            with self.assertRaises(SystemExit):
+                helper.validate_target(None, {"pid": 11, "window_id": 20})
+        self.assertEqual(json.loads(printed.call_args.args[0])["code"], "target_mismatch")
+
+    def test_target_process_reuse_fails(self):
+        initial = {"pid": 10, "window_id": 20, "executable": "test.exe", "launch_time": 1}
+        with patch.object(helper, "window_metadata", return_value={**initial, "launch_time": 2}), patch("builtins.print"):
+            with self.assertRaises(SystemExit):
+                helper.validate_target(None, {"pid": 10, "window_id": 20}, initial)
+
+    def test_nonobject_parameters_emit_invalid_input(self):
+        import io
+        with patch.object(helper.sys, "argv", ["helper"]), patch.object(helper.sys, "stdin", io.StringIO("[]")), patch("builtins.print") as printed:
+            with self.assertRaises(SystemExit):
+                helper.main()
+        self.assertEqual(json.loads(printed.call_args.args[0])["code"], "invalid_input")
+
     def test_fail_emits_the_helper_contract(self):
         with patch("builtins.print") as printed:
             with self.assertRaises(SystemExit):
